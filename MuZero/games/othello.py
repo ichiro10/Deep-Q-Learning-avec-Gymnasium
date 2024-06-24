@@ -14,20 +14,23 @@ import cv2
 class OthelloWrapper:
     def __init__(self, gameMode):
         # Initialiser l'environnement du jeu
-        self.env = gym.make("ALE/Othello-v5", render_mode=None, mode=gameMode, obs_type="grayscale", frameskip=18)
+        self.env = gym.make("ALE/Othello-v5", render_mode=None, mode=gameMode, obs_type="grayscale", frameskip=18, repeat_action_probability=0)
         self.currPosition = (7, 7)
         self.obs = None
         self.info = None
+        self.rendered = False
         
         # Initialiser le jeu
         self.board = self.resetGame()
-        self.board = self.readBoard()
 
     # Réinitialiser l'environnement
     def resetGame(self, seed=1337): 
         self.board = numpy.zeros((1, 8, 8))       
-        self.obs, self.info = self.env.reset(seed=seed)
+        self.obs, self.info = self.env.reset()
+        self.obs, _, _, _, _ = self.env.step(0)
+        self.obs, _, _, _, _ = self.env.step(0)
         self.currPosition = (7, 7)
+        self.board = self.readBoard()
         
         return self.board
         
@@ -36,15 +39,15 @@ class OthelloWrapper:
     def readBoard(self):
         # Lire l'image de l'écran et convertir en image opencv
         img = cv2.cvtColor(self.obs, cv2.COLOR_GRAY2BGR)
-        
+               
         # Pour chaque case, identifier la couleur (1 = noir, 2 = blanc, 0 = vide)
         for i in range(8):
             for j in range(8):
                 x, y = (22 + 16 * i, 28 + 22 * j)
-                color = 0
-                if img[y, x][0] < 100:
-                    color = 1
-                elif img[y, x][0] > 150:
+                color = 1
+                if img[y, x][0] == 104:
+                    color = 0
+                elif img[y, x][0] == 212:
                     color = 2
                 self.board[0, j, i] = color
         
@@ -65,20 +68,26 @@ class OthelloWrapper:
     
     # Déplacer le curseur à la position donnée et jouer le coup
     def jouerCoup(self, targetPosition):
+        # Si le coup est hors du plateau, on ne fait rien
+        if targetPosition[0] < 0 or targetPosition[0] >= 8 or targetPosition[1] < 0 or targetPosition[1] >= 8:
+            return 0, False, False, None
+
         oldBoard = self.readBoard().copy()
-        
+        oldScore = self.score()
+        #print("Coup à jouer en", targetPosition)
+
         # Faire le bon nombre de déplacements verticaux
         # Action 2 = haut, 5 = bas
         if targetPosition[0] < self.currPosition[0]:
             for _ in range(self.currPosition[0] - targetPosition[0]):
                 #print("up")
                 _, _, _, _, _ = self.env.step(2)
-                _, _, _, _, _ = self.env.step(0)
+                self.wait(4)
         elif targetPosition[0] > self.currPosition[0]:
             for _ in range(targetPosition[0] - self.currPosition[0]):
                 #print("down")
                 _, _, _, _, _ = self.env.step(5)
-                _, _, _, _, _ = self.env.step(0)
+                self.wait(4)
                 
         # Faire le bon nombre de déplacements horizontaux
         # Action 3 = droite, 4 = gauche
@@ -86,12 +95,12 @@ class OthelloWrapper:
             for _ in range(self.currPosition[1] - targetPosition[1]):
                 #print("left")
                 _, _, _, _, _ = self.env.step(4)
-                _, _, _, _, _ = self.env.step(0)
+                self.wait(4)
         elif targetPosition[1] > self.currPosition[1]:
             for _ in range(targetPosition[1] - self.currPosition[1]):
                 #print("right")
                 _, _, _, _, _ = self.env.step(3)
-                _, _, _, _, _ = self.env.step(0)
+                self.wait(4)
                 
         # La position du curseur est maintenant la cible
         self.currPosition = (targetPosition[0], targetPosition[1])
@@ -101,20 +110,31 @@ class OthelloWrapper:
         
         # Action 0 jusqu'à ce que la position du curseur change
         turnProcess = True
+        nbChecks = 0
         while turnProcess and not terminated:
-            self.obs, reward, terminated, truncated, info = self.env.step(0)
+            self.wait(12)
+            nbChecks += 1
             
             # Vérifier si le plateau a changé
             boardChanged = False
             for i in range(8):
                 for j in range(8):
-                    if oldBoard[0, j, i] != self.readBoard()[0, j, i]:
+                    if oldBoard[0, j, i] != self.readBoard()[0, j, i] and self.readBoard()[0, j, i] > 0:
                         boardChanged = True
                         break
                     
             if not boardChanged:
                 turnProcess = False
+
+            if(nbChecks > 10):
+                #print("Stuck on flickering cursor")
+                break
+                
+        # Si le plateau a changé, on met à jour la position du curseur
+        self.currPosition = self.newPosition(oldBoard)
+        #print("Réplique en", self.currPosition)
         
+        reward = self.score() - oldScore + 1 # +1 pour le coup joué
         return reward, terminated, truncated, info
     
     # Calculer le score du jeu
@@ -127,6 +147,10 @@ class OthelloWrapper:
                 elif self.board[0, j, i] == 2:
                     score += 1
         return score
+    
+    def wait(self, frames):
+        for _ in range(frames):
+            self.obs, _, _, _, _ = self.env.step(0)
 
 
 class MuZeroConfig:
@@ -142,12 +166,12 @@ class MuZeroConfig:
         ### Game
         self.observation_shape = (1, 8, 8)  # Dimensions of the game observation, must be 3D (channel, height, width). For a 1D array, please reshape it to (1, 1, length of array)
         self.action_space = list(range(64))  # Fixed list of all possible actions. You should only edit the length
-        self.players = list(range(2))  # List of players. You should only edit the length
+        self.players = list(range(1))  # List of players. You should only edit the length
         self.stacked_observations = 0  # Number of previous observations and previous actions to add to the current observation
 
         # Evaluate
         self.muzero_player = 0  # Turn Muzero begins to play (0: MuZero plays first, 1: MuZero plays second)
-        self.opponent = "expert"  # Hard coded agent that MuZero faces to assess his progress in multiplayer games. It doesn't influence training. None, "random" or "expert" if implemented in the Game class
+        self.opponent = None  # Hard coded agent that MuZero faces to assess his progress in multiplayer games. It doesn't influence training. None, "random" or "expert" if implemented in the Game class
 
 
 
@@ -253,8 +277,7 @@ class Game(AbstractGame):
         self.env = OthelloWrapper(0)
         self.env.resetGame()
         self.board = self.env.readBoard()
-        self.player = 2
-        self.scores = [2, 2]
+        self.resetBuffer = 2
 
     def step(self, action):
         """
@@ -265,14 +288,16 @@ class Game(AbstractGame):
 
         Returns:
             The new observation, the reward and a boolean if the game has ended.
-        """
+        """        
+        #print("Coup tenté :", action)
+
         # Si c'est un coup illégal, on pénalise le joueur de 1 et on ne fait rien
         if action not in self.legal_actions():
-            return self.get_observation(), -1, False
+            return self.board, -10, False
         
         # S'il n'y a pas de coup possible, on a fini
         if len(self.legal_actions()) == 0:
-            return self.get_observation(), 0, True
+            return self.board, 0, True
         
         # Jouer le coup
         row = action // 8
@@ -280,7 +305,6 @@ class Game(AbstractGame):
         self.env.jouerCoup((row, col))
         
         # Mettre à jour le plateau
-        self.player = abs(self.player - 2) + 1
         self.board = self.env.readBoard()
         
         # Mettre à jour les scores
@@ -292,16 +316,12 @@ class Game(AbstractGame):
                 elif self.board[0, i, j] == 2:
                     self.scores[1] += 1
 
-        return self.get_observation(), 1, False
+        
+        # S'il n'y a pas de coup possible, on a fini
+        if len(self.legal_actions()) == 0:
+            return self.board, 0, True
 
-    def to_play(self):
-        """
-        Return the current player.
-
-        Returns:
-            The current player, it should be an element of the players list in the config.
-        """
-        return 0 if self.player == 2 else 2
+        return self.board, 1, False
 
     def legal_actions(self):
         """
@@ -323,7 +343,7 @@ class Game(AbstractGame):
             if self.board[0, row, col] > 0:
                 continue
             
-            # Check si c'est un coup adjacent à un pion adverse
+            # Check si c'est un coup legal d'Othello (le joueur est blanc et doit retourner au moins un pion)
             illegal = True
             for i in range(-1, 2):
                 for j in range(-1, 2):
@@ -331,19 +351,31 @@ class Game(AbstractGame):
                         continue
                     if row + i < 0 or row + i >= 8 or col + j < 0 or col + j >= 8:
                         continue
-                    if self.board[0, row + i, col + j] == 1:
-                        for k in range(1, 8):
-                            if row + i * k < 0 or row + i * k >= 8 or col + j * k < 0 or col + j * k >= 8:
-                                break
-                            if self.board[0, row + i * k, col + j * k] == 0:
-                                break
-                            if self.board[0, row + i * k, col + j * k] == self.player:
-                                illegal = False
-                                break
+                    if self.board[0, row + i, col + j] != 1:
+                        continue
+                    for k in range(1, 8):
+                        if row + i * k < 0 or row + i * k >= 8 or col + j * k < 0 or col + j * k >= 8:
+                            break
+                        if self.board[0, row + i * k, col + j * k] == 0:
+                            break
+                        if self.board[0, row + i * k, col + j * k] == 2:
+                            illegal = False
+                            break
+                        if self.board[0, row + i * k, col + j * k] == 1:
+                            continue
+                    if not illegal:
+                        break
+                if not illegal:
+                    break
             if illegal:
                 continue            
                 
             legal.append(cell)
+
+        # Si c'est vide, on affiche le plateau pour débugger
+        if len(legal) == 0:
+            print(self.board)
+
         return legal
 
     def reset(self):
@@ -359,31 +391,8 @@ class Game(AbstractGame):
         """
         Display the game observation.
         """
-        self.env.render()
+        self.env.env.render()
         input("Press enter to take a step ")
-
-    def human_to_action(self):
-        """
-        For multiplayer games, ask the user for a legal action
-        and return the corresponding action number.
-
-        Returns:
-            An integer from the action space.
-        """
-        choice = input(f"Enter the column to play for the player {self.to_play()}: ")
-        while choice not in [str(action) for action in self.legal_actions()]:
-            choice = input("Enter another column : ")
-        return int(choice)
-
-    def expert_agent(self):
-        """
-        Hard coded agent that MuZero faces to assess his progress in multiplayer games.
-        It doesn't influence training
-
-        Returns:
-            Action as an integer to take in the current game state
-        """
-        return self.env.expert_action()
 
     def action_to_string(self, action_number):
         """
@@ -396,95 +405,3 @@ class Game(AbstractGame):
             String representing the action.
         """
         return f"Play column {action_number + 1}"
-
-class Othello:
-    def __init__(self):
-        self.env = OthelloWrapper(0)
-        self.env.resetGame()
-        self.board = self.env.readBoard()
-        self.player = 2
-        self.scores = [2, 2]
-
-    def to_play(self):
-        return 0 if self.player == 2 else 2
-
-    def reset(self):
-        self.env.resetGame()
-        self.board = self.env.readBoard()
-        self.player = 2
-        self.scores = [2, 2]
-        return self.env.readBoard()
-
-    def step(self, action):
-        # Si c'est un coup illégal, on pénalise le joueur de 1 et on ne fait rien
-        if action not in self.legal_actions():
-            return self.get_observation(), -1, False
-        
-        # S'il n'y a pas de coup possible, on a fini
-        if len(self.legal_actions()) == 0:
-            return self.get_observation(), 0, True
-        
-        # Jouer le coup
-        row = action // 8
-        col = action % 8
-        self.env.jouerCoup((row, col))
-        
-        # Mettre à jour le plateau
-        self.player = abs(self.player - 2) + 1
-        self.board = self.env.readBoard()
-        
-        # Mettre à jour les scores
-        self.scores = [0, 0]
-        for i in range(8):
-            for j in range(8):
-                if self.board[0, i, j] == 1:
-                    self.scores[0] += 1
-                elif self.board[0, i, j] == 2:
-                    self.scores[1] += 1
-
-        return self.get_observation(), 1, False
-
-    def legal_actions(self):
-        legal = []
-        for cell in range(64):
-            row = cell // 8
-            col = cell % 8            
-            
-            # Check si la case est déjà occupée
-            if self.board[0, row, col] > 0:
-                continue
-            
-            # Check si c'est un coup adjacent à un pion adverse
-            illegal = True
-            for i in range(-1, 2):
-                for j in range(-1, 2):
-                    if i == 0 and j == 0:
-                        continue
-                    if row + i < 0 or row + i >= 8 or col + j < 0 or col + j >= 8:
-                        continue
-                    if self.board[0, row + i, col + j] == 1:
-                        for k in range(1, 8):
-                            if row + i * k < 0 or row + i * k >= 8 or col + j * k < 0 or col + j * k >= 8:
-                                break
-                            if self.board[0, row + i * k, col + j * k] == 0:
-                                break
-                            if self.board[0, row + i * k, col + j * k] == self.player:
-                                illegal = False
-                                break
-            if illegal:
-                continue            
-                
-            legal.append(cell)
-        return legal
-
-    def have_winner(self):
-        # Pas nécessaire pour Othello
-        return False
-
-    def expert_action(self):
-        # Pas nécessaire pour Othello
-        return False
-
-    def render(self):
-        # Pas nécessaire pour Othello
-        return False
