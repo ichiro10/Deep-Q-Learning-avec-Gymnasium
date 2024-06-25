@@ -4,6 +4,7 @@ import pathlib
 import gymnasium as gym
 import numpy
 import torch
+import ale_py
 
 from .abstract_game import AbstractGame
 
@@ -139,9 +140,7 @@ class Game(AbstractGame):
     """
 
     def __init__(self, seed=None):
-        self.env = gym.make("ALE/Berserk-v5", render_mode="human")
-        if seed is not None:
-            self.env.seed(seed)
+        self.env = gym.make("ALE/Berzerk-v5", render_mode=None)
 
     def step(self, action):
         """
