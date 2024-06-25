@@ -14,7 +14,7 @@ import cv2
 class OthelloWrapper:
     def __init__(self, gameMode):
         # Initialiser l'environnement du jeu
-        self.env = gym.make("ALE/Othello-v5", render_mode=None, mode=gameMode, obs_type="grayscale", frameskip=18, repeat_action_probability=0)
+        self.env = gym.make("ALE/Othello-v5", render_mode="human", mode=gameMode, obs_type="grayscale", frameskip=8, repeat_action_probability=0)
         self.currPosition = (7, 7)
         self.obs = None
         self.info = None
@@ -82,10 +82,12 @@ class OthelloWrapper:
             for _ in range(self.currPosition[0] - targetPosition[0]):
                 #print("up")
                 _, _, _, _, _ = self.env.step(2)
+                _, _, _, _, _ = self.env.step(2)
                 self.wait(4)
         elif targetPosition[0] > self.currPosition[0]:
             for _ in range(targetPosition[0] - self.currPosition[0]):
                 #print("down")
+                _, _, _, _, _ = self.env.step(5)
                 _, _, _, _, _ = self.env.step(5)
                 self.wait(4)
                 
@@ -95,10 +97,12 @@ class OthelloWrapper:
             for _ in range(self.currPosition[1] - targetPosition[1]):
                 #print("left")
                 _, _, _, _, _ = self.env.step(4)
+                _, _, _, _, _ = self.env.step(4)
                 self.wait(4)
         elif targetPosition[1] > self.currPosition[1]:
             for _ in range(targetPosition[1] - self.currPosition[1]):
                 #print("right")
+                _, _, _, _, _ = self.env.step(3)
                 _, _, _, _, _ = self.env.step(3)
                 self.wait(4)
                 
@@ -107,12 +111,13 @@ class OthelloWrapper:
                 
         # Jouer le coup et sortir le nouvel état
         self.obs, reward, terminated, truncated, info = self.env.step(1)
+        self.obs, reward, terminated, truncated, info = self.env.step(1)
         
         # Action 0 jusqu'à ce que la position du curseur change
         turnProcess = True
         nbChecks = 0
         while turnProcess and not terminated:
-            self.wait(12)
+            self.wait(4)
             nbChecks += 1
             
             # Vérifier si le plateau a changé
@@ -131,6 +136,7 @@ class OthelloWrapper:
                 break
                 
         # Si le plateau a changé, on met à jour la position du curseur
+        self.board = self.readBoard()
         self.currPosition = self.newPosition(oldBoard)
         #print("Réplique en", self.currPosition)
         
