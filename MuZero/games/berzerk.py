@@ -39,7 +39,7 @@ class MuZeroConfig:
         ### Self-Play
         self.num_workers = 1  # Number of simultaneous threads/workers self-playing to feed the replay buffer
         self.selfplay_on_gpu = False
-        self.max_moves = 108000  # Maximum number of moves if game is not finished before
+        self.max_moves = 50000  # Maximum number of moves if game is not finished before
         self.num_simulations = 30  # Number of future moves self-simulated
         self.discount = 0.997  # Chronological discount of the reward
         self.temperature_threshold = None  # Number of moves before dropping the temperature given by visit_softmax_temperature_fn to 0 (ie selecting the best action). If None, visit_softmax_temperature_fn is used every time
@@ -82,8 +82,8 @@ class MuZeroConfig:
         ### Training
         self.results_path = pathlib.Path(__file__).resolve().parents[1] / "results" / pathlib.Path(__file__).stem / datetime.datetime.now().strftime("%Y-%m-%d--%H-%M-%S")  # Path to store the model weights and TensorBoard logs
         self.save_model = True  # Save the checkpoint in results_path as model.checkpoint
-        self.training_steps = int(60000)  # Total number of training steps (ie weights update according to a batch)
-        self.batch_size = 512  # Number of parts of games to train on at each training step
+        self.training_steps = int(600000)  # Total number of training steps (ie weights update according to a batch)
+        self.batch_size = 256  # Number of parts of games to train on at each training step
         self.checkpoint_interval = 500  # Number of training steps before using the model for self-playing
         self.value_loss_weight = 0.5  # Scale the value loss to avoid overfitting of the value function
         self.train_on_gpu = torch.cuda.is_available()  # Train on GPU if available
@@ -126,9 +126,9 @@ class MuZeroConfig:
         Returns:
             Positive float.
         """
-        if trained_steps < 500e3:
+        if trained_steps < 0.5 * self.training_steps:
             return 1.0
-        elif trained_steps < 750e3:
+        elif trained_steps < 0.75 * self.training_steps:
             return 0.5
         else:
             return 0.25
@@ -140,7 +140,7 @@ class Game(AbstractGame):
     """
 
     def __init__(self, seed=None):
-        self.env = gym.make("ALE/Berzerk-v5", render_mode=None, mode=1)
+        self.env = gym.make("ALE/Berzerk-v5", render_mode=None, mode=2)
 
     def step(self, action):
         """
